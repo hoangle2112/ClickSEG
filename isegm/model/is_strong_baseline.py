@@ -66,6 +66,7 @@ class BaselineModel(ISModel):
         if self.with_aux_output:
             outputs['instances_aux'] = nn.functional.interpolate(outputs['instances_aux'], size=image.size()[2:],
                                                              mode='bilinear', align_corners=True)
+
         return outputs
 
 

@@ -30,8 +30,8 @@ class BaselinePredictor(object):
         self.to_tensor = transforms.ToTensor()
 
         self.transforms = [zoom_in] if zoom_in is not None else []
-        if max_size is not None:
-            self.transforms.append(LimitLongestSide(max_size=max_size))
+        # if max_size is not None:
+        #     self.transforms.append(LimitLongestSide(max_size=max_size))
         self.crop_l = infer_size
         self.transforms.append(ResizeTrans(self.crop_l))
         self.transforms.append(SigmoidForPred())
@@ -68,10 +68,10 @@ class BaselinePredictor(object):
         input_image = self.original_image
         if prev_mask is None:
             prev_mask = self.prev_prediction
-        if hasattr(self.net, 'with_prev_mask') and self.net.with_prev_mask:
-            input_image = torch.cat((input_image, prev_mask), dim=1)
+        # if hasattr(self.net, 'with_prev_mask') and self.net.with_prev_mask:
+        #     input_image = torch.cat((input_image, prev_mask), dim=1)
 
-        
+        input_image = torch.cat((input_image, prev_mask), dim=1)
 
         image_nd, clicks_lists, is_image_changed = self.apply_transforms(
             input_image, [clicks_list]
@@ -93,34 +93,77 @@ class BaselinePredictor(object):
 
     def _get_prediction(self, image_nd, clicks_lists, is_image_changed):
         points_nd = self.get_points_nd(clicks_lists)
-        output =  self.net(image_nd, points_nd)
-        return output['instances']
+        # output = self.net(image_nd, points_nd)
+        # return output.instances
+        output = self._get_prediction_from_triton(image_nd, points_nd)
+        return output
     
-    def _get_refine(self, coarse_mask, image, clicks, feature, focus_roi, focus_roi_in_global_roi):
-        y1,y2,x1,x2 = focus_roi
-        image_focus = image[:,:,y1:y2,x1:x2]
-        try:
-            image_focus = F.interpolate(image_focus,(self.crop_l,self.crop_l),mode='bilinear',align_corners=True)
-        except:
-            ly,lx,lin = clicks[-1].coords_and_indx
-            print('last clicks: ',clicks[-1].is_positive)
-            print(self.prev_prediction.shape)
-            print(ly,lx, self.prev_prediction[0,0,ly,lx])
+    def _get_prediction_from_triton(self, image_nd, points_nd):
 
-        mask_focus = coarse_mask
-        #mask_focus = coarse_mask[:,:,y1:y2,x1:x2]
-        #mask_focus = F.interpolate(mask_focus,(self.crop_l,self.crop_l),mode='bilinear',align_corners=True)
+        import numpy as np
+        import tritonclient.grpc as tritongrpcclient
 
-        points_nd = self.get_points_nd_inbbox(clicks,y1,y2,x1,x2)
-        y1,y2,x1,x2 = focus_roi_in_global_roi
-        roi = torch.tensor([0,x1, y1, x2, y2]).unsqueeze(0).float().to(image_focus.device)
+        grpc_url = 'localhost:8001'
+        verbose = False
+        model_version = '1'
+        triton_grpc_client = tritongrpcclient.InferenceServerClient(url=grpc_url, verbose=verbose)
+        input_dtype = 'FP32'
+
+        model_name = "focalclick_hr18ss1_cclvs"
+        input_shape_1 = image_nd.shape
+        input_shape_2 = points_nd.shape
+        input_name_1 = "input_1"
+        input_name_2 = "input_2"
+        input_dtype = "FP32"
+
+        output_name = "output_1"
+
+        image_nd = np.array(image_nd.cpu().numpy())
+        points_nd = np.array(points_nd.cpu().numpy())
+
+        input_1 = tritongrpcclient.InferInput(input_name_1, input_shape_1, input_dtype)
+        input_1.set_data_from_numpy(image_nd)
+
+        input_2 = tritongrpcclient.InferInput(input_name_2, input_shape_2, input_dtype)
+        input_2.set_data_from_numpy(points_nd)
+
+        output = tritongrpcclient.InferRequestedOutput(output_name)
+
+        requests = []
+        requests.append(triton_grpc_client.infer(model_name, model_version=model_version, 
+                                            inputs=[input_1, input_2], outputs=[output]))
+
+        output = requests[0].as_numpy('output_1')
+
+        return torch.from_numpy(output).to("cuda:0")
+
+    
+    # def _get_refine(self, coarse_mask, image, clicks, feature, focus_roi, focus_roi_in_global_roi):
+    #     print("there is refinement")
+    #     y1,y2,x1,x2 = focus_roi
+    #     image_focus = image[:,:,y1:y2,x1:x2]
+    #     try:
+    #         image_focus = F.interpolate(image_focus,(self.crop_l,self.crop_l),mode='bilinear',align_corners=True)
+    #     except:
+    #         ly,lx,lin = clicks[-1].coords_and_indx
+    #         print('last clicks: ',clicks[-1].is_positive)
+    #         print(self.prev_prediction.shape)
+    #         print(ly,lx, self.prev_prediction[0,0,ly,lx])
+
+    #     mask_focus = coarse_mask
+    #     #mask_focus = coarse_mask[:,:,y1:y2,x1:x2]
+    #     #mask_focus = F.interpolate(mask_focus,(self.crop_l,self.crop_l),mode='bilinear',align_corners=True)
+
+    #     points_nd = self.get_points_nd_inbbox(clicks,y1,y2,x1,x2)
+    #     y1,y2,x1,x2 = focus_roi_in_global_roi
+    #     roi = torch.tensor([0,x1, y1, x2, y2]).unsqueeze(0).float().to(image_focus.device)
 
 
-        pred = self.net.refine(image_focus,points_nd, feature, mask_focus, roi) #['instances_refined'] 
-        focus_coarse, focus_refined = pred['instances_coarse'] , pred['instances_refined'] 
-        self.focus_coarse = torch.sigmoid(focus_coarse).cpu().numpy()[0, 0] * 255
-        self.focus_refined = torch.sigmoid(focus_refined).cpu().numpy()[0, 0] * 255
-        return focus_refined
+    #     pred = self.net.refine(image_focus,points_nd, feature, mask_focus, roi) #['instances_refined'] 
+    #     focus_coarse, focus_refined = pred['instances_coarse'] , pred['instances_refined'] 
+    #     self.focus_coarse = torch.sigmoid(focus_coarse).cpu().numpy()[0, 0] * 255
+    #     self.focus_refined = torch.sigmoid(focus_refined).cpu().numpy()[0, 0] * 255
+    #     return focus_refined
 
         #return self.net.refine(image_focus,points_nd, feature, mask_focus, roi)['instances_coarse'] 
 
@@ -150,10 +193,6 @@ class BaselinePredictor(object):
         xf2_n = min(xf2_n,self.crop_l)
         return (yf1_n,yf2_n,xf1_n,xf2_n)
 
-
-
-
-        
 
     def _get_transform_states(self):
         return [x.get_state() for x in self.transforms]

@@ -77,7 +77,7 @@ class DiffisionPredictor(object):
         image_nd, clicks_lists, is_image_changed = self.apply_transforms(
             input_image, [clicks_list]
         )
-
+        print("debug_states_cdnet",image_nd, clicks_lists)
         
         prediction = self._get_prediction(image_nd, clicks_lists, is_image_changed)
 

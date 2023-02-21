@@ -39,8 +39,8 @@ def get_predictor(net, brs_mode, device,
     if brs_opt_func_params is None:
         brs_opt_func_params = dict()
 
-    if isinstance(net, (list, tuple)):
-        assert brs_mode == 'NoBRS', "Multi-stage models support only NoBRS mode."
+    # if isinstance(net, (list, tuple)):
+    #     assert brs_mode == 'NoBRS', "Multi-stage models support only NoBRS mode."
 
     if brs_mode == 'NoBRS':
         if predictor_params is not None:
@@ -115,7 +115,15 @@ def get_predictor(net, brs_mode, device,
                                       with_flip=with_flip,
                                       zoom_in=zoom_in,
                                       **predictor_params_)
-    else:
-        raise NotImplementedError
+    # else:
+    #     raise NotImplementedError
 
+        
+    # Triton
+    else: 
+        if predictor_params is not None:
+            predictor_params_.update(predictor_params)
+        predictor = BaselinePredictor(net, device, zoom_in=zoom_in, with_flip=with_flip, infer_size =infer_size, **predictor_params_)
+    
+    # print(predictor)
     return predictor

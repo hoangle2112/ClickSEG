@@ -8,8 +8,6 @@ def map_point_in_bbox(y,x,y1,y2,x1,x2,crop_l):
     y = (y - y1) * ry
     x = (x - x1) * rx
     return y,x
-
-
  
 def get_focus_cropv1(pred_mask, previous_mask, global_roi, y,x, ratio):
     pred_mask = pred_mask > 0.49

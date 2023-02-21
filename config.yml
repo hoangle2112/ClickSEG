@@ -1,4 +1,4 @@
-INTERACTIVE_MODELS_PATH: "./experiments/iter_mask/cocolvis_hrnet18s/000_first-try/checkpoints/"
+INTERACTIVE_MODELS_PATH: "./weights"
 EXPS_PATH: "./experiments"
 
 

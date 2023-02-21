@@ -171,6 +171,8 @@ class HRNetFeatureBRSPredictor(BRSBasePredictor):
 
         if num_clicks <= self.net_clicks_limit or is_image_changed or self.input_data is None:
             self.input_data = self._get_head_input(image_nd, points_nd)
+        
+        print("debug_states_brs",image_nd, clicks_lists)
 
         def get_prediction_logits(scale, bias):
             scale = scale.view(bs, -1, 1, 1)
